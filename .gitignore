@@ -1,0 +1,17 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.idea/
+.vscode/
+build/
+dist/
+*.spec
+*.exe
+*.dll
+*.log
+.env
+.env.*
+measurements/
+exports/
