@@ -1,19 +1,34 @@
 # Spectrometer Desktop
 
-A Python desktop application for plotting spectra, managing measurement files
-and comparing aligned measurements. The offline demo starts with two clearly
-labelled synthetic curves and requires no connected instrument.
+Open saved measurements, overlay spectra, compare aligned curves and export data or plots in a **Python/PyQt5 desktop app**.
+
+This personal application demo shows scientific desktop UI, measurement-file validation, numerical comparison and background serial-workflow code. It starts with two labelled synthetic curves, so the full file/plot workflow can be explored without an instrument.
 
 ![Offline demo with two synthetic spectra](docs/demo.png)
 
-This is a curated continuation of a recovered personal application, suitable
-as a scientific-software and serial-integration portfolio example. The scope
-and recovered-source history are described in [PROVENANCE.md](PROVENANCE.md).
+## Explore the demo
 
-## Run the offline demo
+After [setup](#setup), run:
 
-Use Python **3.12**. These commands create a project-local environment and do
-not install packages globally.
+```powershell
+.\.venv\Scripts\python.exe Spektrometar.py --demo
+```
+
+Running without arguments also selects this offline mode.
+
+1. Toggle curves with their checkboxes and use the Matplotlib toolbar to pan or zoom.
+2. Right-click a measurement to rename, delete or compare it. **Measurements → Compare measurements** also opens the comparison workflow.
+3. Save checked curves through **File → Save measurements**, then reopen the text file through **File → Open measurements**.
+4. Use **File → Export plot** to save PNG, JPG or PDF output.
+5. Choose **Load synthetic demo** to add another artificial pair.
+
+The comparison reports Pearson correlation between intensity arrays on matching wavelength grids. Duplicate imported names receive numbered suffixes. Invalid files are parsed before records are added, and constant curves or incompatible grids produce a comparison error.
+
+The implementation separates GUI controls, file/math operations and a serial worker. Acquisition uses a `QThread` and signals so serial reading can proceed separately from the GUI event loop; the offline tests exercise that behavior with fake acquisition.
+
+## Setup
+
+Use **Python 3.12**. Dependencies are pinned to the Windows verification environment. Run from the repository root.
 
 Windows PowerShell:
 
@@ -23,7 +38,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe Spektrometar.py --demo
 ```
 
-Linux/macOS equivalent:
+Linux/macOS command equivalents:
 
 ```bash
 python3.12 -m venv .venv
@@ -31,70 +46,11 @@ python3.12 -m venv .venv
 .venv/bin/python Spektrometar.py --demo
 ```
 
-The dependency versions are pinned to the environment used for verification.
-The GUI was verified offscreen on Windows; Linux/macOS desktop behavior has
-not been checked. Running without arguments also selects the offline demo.
+Dependency installation requires internet access. The offline demo has no network or hardware dependency. Linux/macOS desktop behavior has not been verified.
 
-## What you can demonstrate
+## Measurement files
 
-- Overlay spectra and use Matplotlib's pan/zoom toolbar.
-- Toggle individual curves and rename/delete them with a right click.
-- Use **File → Save measurements** to export selected curves, then reopen
-  the text file through **File → Open measurements**.
-- Use **File → Export plot** for PNG, JPG or PDF output.
-- Use **Measurements → Compare measurements** to show Pearson correlation
-  between two curves on the same wavelength grid.
-- Load another synthetic pair at any time with **Load synthetic demo**.
-
-Duplicate imported names receive numbered suffixes. A malformed measurement
-file is rejected before any of its records are added. Constant spectra and
-different wavelength grids produce a clear comparison error rather than an
-undefined result. Closing during acquisition requests cancellation and waits
-for the worker to release the device.
-
-## Optional hardware acquisition
-
-Hardware acquisition is enabled explicitly:
-
-```powershell
-.\.venv\Scripts\python.exe Spektrometar.py --hardware --port COM3 --timeout 10
-```
-
-On Linux the port might be `/dev/ttyUSB0`; select the actual device port. If
-`--port` is omitted, the original Arduino-description heuristic is used, and
-ambiguous matches are rejected. Required operating-system drivers must be
-obtained from the device/vendor; none are bundled.
-
-The recovered protocol uses **115200 baud**, sends the byte `m` to trigger a
-measurement, and reads ASCII lines in this form:
-
-```text
-x=d,400.0,y=v,123.4
-x=d,402.0,y=v,127.8
-x=e
-```
-
-The third field is treated as an opaque device label, matching the original
-driver. Other device chatter is ignored. Reads accept fragmented lines, cap
-each row at 256 bytes and each measurement at 4096 points, and require the
-`x=e` terminator before accepting the data. The acquisition deadline is
-configurable between 0 and 60 seconds; individual reads wait at most 0.2
-seconds, and the command write has a one-second timeout. Serial IO runs in
-a `QThread`, so it does not block the GUI event loop.
-
-**Physical hardware has not been tested in this curated version.** No firmware,
-device specification or calibration data was recovered. The synthetic demo is
-not an instrument reading. Intensity is shown in arbitrary units; correlation
-compares curve shape and does not identify materials or establish measurement
-accuracy. Automatic resampling, calibration and continuous acquisition are
-outside this example's scope.
-
-## Measurement file format
-
-Each block begins with a one-line name, followed by `wavelength, intensity`
-numeric pairs. A blank line separates blocks. At least two finite pairs are
-required. Exports use UTF-8; imports also support legacy Bulgarian Windows
-CP1251 files.
+Each block begins with a one-line name, followed by at least two finite `wavelength, intensity` pairs. A blank line separates blocks:
 
 ```text
 Example A
@@ -106,39 +62,54 @@ Example B
 402, 13
 ```
 
-Measurements remain in memory until explicitly exported. The application does
-not write data beside its source and can be launched from another working
-directory. No personal measurement files are included.
+Exports use UTF-8; imports also accept legacy Bulgarian Windows CP1251 files. Measurements stay in memory until explicitly exported. Measurement data is not written beside the source automatically, and the app can be launched from another working directory. No personal measurement files are bundled.
 
-## Tests and verification
+## Optional serial acquisition
+
+The serial workflow is implemented and tested with fake connections. **Physical hardware has not been tested in this curated version.** Enable hardware mode explicitly:
+
+```powershell
+.\.venv\Scripts\python.exe Spektrometar.py --hardware --port COM3 --timeout 10
+```
+
+Select the actual device port; `/dev/ttyUSB0` is one possible Linux example. Without `--port`, discovery uses the recovered Arduino-description heuristic and rejects ambiguous matches. Obtain operating-system drivers from the device/vendor; none are bundled.
+
+The recovered protocol uses 115200 baud, writes the byte `m`, then expects ASCII rows such as:
+
+```text
+x=d,400.0,y=v,123.4
+x=d,402.0,y=v,127.8
+x=e
+```
+
+The third field is an opaque device label. The reader handles fragmented rows, ignores unrelated chatter, caps rows at 256 bytes and measurements at 4096 points, and accepts a measurement only after `x=e`.
+
+`--timeout` sets the serial-reading deadline: **greater than 0 and at most 60 seconds**, default 10. Individual reads wait at most 0.2 seconds and the command write has a one-second timeout. Port discovery/opening occurs before the read deadline and depends on the OS/device. Closing during acquisition requests cancellation and defers window closure until the worker finishes.
+
+## Tests and verified scope
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
-**27 tests passed** on Windows with Python 3.12.4, NumPy 2.5.4,
-Matplotlib 3.11.2, PyQt5 5.15.11 and pyserial 3.5. Tests use the standard
-library's `unittest`, synthetic measurements and fake serial connections.
-They never contact hardware or a network. GUI tests select Qt's offscreen
-platform automatically.
+**27 tests passed on Windows on 20 October 2026**, using Python 3.12.4, NumPy 2.5.4, Matplotlib 3.11.2, PyQt5 5.15.11 and pyserial 3.5. This audit reran the existing suite with network access blocked. Serial tests use fake devices and GUI tests use Qt's offscreen platform.
 
-Coverage includes text/encoding round trips, invalid imports, correlation
-edge cases, fragmented serial rows, deadlines, device disconnects, resource
-cleanup, GUI responsiveness, cancellation, duplicate names and plot export.
-The screenshot above was captured from the running offline demo and visually
-inspected. A physical-device test and desktop testing on other operating
-systems remain outstanding.
+The suite covers:
 
-## Code map
+- Synthetic samples, text/encoding round trips and malformed-file rejection.
+- Known correlation values, constant/unaligned inputs and large finite values.
+- Fragmented serial rows, deadlines, cancellation, disconnects and connection cleanup.
+- Demo startup without opening serial, GUI responsiveness during fake acquisition, duplicate names, save/reload and PNG plot export.
+
+The preview shows the synthetic demo. Hardware compatibility, calibration and physical measurement accuracy are unverified; no firmware, device specification or calibration data is bundled. Intensity is in arbitrary units. Correlation does not identify materials, and automatic resampling, calibration and continuous acquisition are outside this example. Offscreen checks do not establish native desktop behavior on every OS.
+
+## Code and provenance
 
 | File | Responsibility |
 |---|---|
-| `Spektrometar.py` | PyQt5 interface, plotting and acquisition worker lifecycle. |
-| `measurements.py` | Named text format, validation, comparison math and synthetic samples. |
-| `spectrometer_driver.py` | Device discovery, protocol parsing and bounded serial acquisition. |
+| `Spektrometar.py` | PyQt5 interface, plots and acquisition worker lifecycle. |
+| `measurements.py` | Named text format, validation, comparison and synthetic samples. |
+| `spectrometer_driver.py` | Device discovery, protocol parsing and serial reading. |
 | `tests/` | Offline unit and GUI regression tests. |
 
-The original application workflow and much of the GUI structure are retained;
-this is a focused maintenance and demonstration pass. External dependencies
-retain their own licenses. See [PROVENANCE.md](PROVENANCE.md) for attribution
-and publication scope; no new project-code license was assigned.
+This repository continues a recovered personal application and retains much of its GUI workflow. See [PROVENANCE.md](PROVENANCE.md) for the source history and publication scope. Dependencies retain their own licenses; no new project-code license has been assigned.
